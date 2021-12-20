@@ -79,7 +79,7 @@ FROM `hca-data-sandbox.hrg_recruiting.synthetic_2_create_job_openings`
 ORDER BY 1 desc
 */
 
-CREATE OR REPLACE TABLE `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications` AS
+CREATE OR REPLACE TABLE `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications_pre` AS
 with applicant_cte as (
 SELECT
   row_number() over (partition by 'x') as application_id
@@ -105,24 +105,27 @@ LEFT JOIN applicant_cte b
   ON b.application_id BETWEEN a.start_row and a.end_row
 ORDER BY 1
 )
-, dates_cte as (
+-- , dates_cte as (
 SELECT
     job_position_id
   , application_id
   , applicant_id
   , post_date
-  , DATE_ADD(post_date, INTERVAL days_to_apply day) as application_date
-  , DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate day) as evaluation_date
-  , DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate + days_to_interview day) as interview_date
-  , DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate + days_to_interview + days_to_offer day) as offer_date
-  , DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate + days_to_interview + days_to_offer + days_to_accept day) as acceptance_date
+  , case when application_id is null then null else DATE_ADD(post_date, INTERVAL days_to_apply day) end as application_date
+  , case when application_id is null then null else DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate day) end as evaluation_date
+  , case when application_id is null then null else DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate + days_to_interview day) end as interview_date
+  , case when application_id is null then null else DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate + days_to_interview + days_to_offer day) end as offer_date
+  , case when application_id is null then null else DATE_ADD(post_date, INTERVAL days_to_apply + days_to_evaluate + days_to_interview + days_to_offer + days_to_accept day) end as acceptance_date
   , rand() as success_evaluate  -- 60% are chosen for interviews after applying
   , rand() as success_interview -- 95% of those chosen for interviews make it to interviews
   , rand() as success_offer     -- 70% of those interviewed are given an offer
   , rand() as success_accept    -- 80% of those offered accept the offer
 FROM application_posting_mapping
-)
-, drop_out_cte as (
+-- )
+;
+
+CREATE OR REPLACE TABLE `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications` AS
+with drop_out_cte as (
 SELECT
     job_position_id
   , application_id
@@ -132,19 +135,26 @@ SELECT
   , evaluation_date
   , case when success_evaluate < 0.6 then 'Pass' else 'Failure' end as evaluation_decision
   # Note: there's no decision for interview b/c the 5% fallout here is a scheduling / process problem
-  , case when success_evaluate < 0.6 and success_interview < 0.95 then interview_date end as interview_date
-  , case when success_evaluate < 0.6 and success_interview < 0.95 then offer_date end as offer_date
+  , case when success_evaluate < 0.6 and success_interview < 0.95 then interview_date else NULL end as interview_date
+  , case when success_evaluate < 0.6 and success_interview < 0.95 then offer_date else NULL end as offer_date
   , case when success_evaluate < 0.6 and success_interview < 0.95 and success_offer < 0.7 then 'Pass' else 'Failure' end as offer_decision
-  , case when success_evaluate < 0.6 and success_interview < 0.95 and success_offer < 0.7 then acceptance_date end as acceptance_date
+  , case when success_evaluate < 0.6 and success_interview < 0.95 and success_offer < 0.7 then acceptance_date else NULL end as acceptance_date
   , case when success_evaluate < 0.6 and success_interview < 0.95 and success_offer < 0.7 and success_accept < 0.8 then 'Pass' else 'Failure' end as acceptance_decision
-FROM dates_cte
+FROM `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications_pre`
 )
 , earliest_acceptance_cte as (
 SELECT
     job_position_id
-  , min(acceptance_date) as earliest_acceptance
+--   , application_id
+--   , application_date
+--   , evaluation_date
+--   , acceptance_date
+  , min(coalesce(acceptance_date,'2999-01-01')) as earliest_acceptance
 FROM drop_out_cte
+-- WHERE acceptance_date is not null
+-- AND evaluation_date > acceptance_date
 GROUP BY 1
+-- ORDER BY 1
 )
 SELECT
     a.job_position_id
@@ -152,13 +162,23 @@ SELECT
   , a.applicant_id
   , a.post_date
   , a.application_date
-  , case when a.evaluation_date > b.earliest_acceptance then NULL else a.evaluation_date end as evaluation_date
-  , case when a.interview_date > b.earliest_acceptance then NULL else a.interview_date end as interview_date
-  , case when a.offer_date > b.earliest_acceptance then NULL else a.offer_date end as offer_date
-  , case when a.acceptance_date > b.earliest_acceptance then NULL else a.acceptance_date end as acceptance_date
+--   , b.earliest_acceptance
+--   , a.evaluation_date as evaluation_date2
+--   , a.interview_date as interview_date2
+--   , a.offer_date as offer_date2
+--   , a.acceptance_date as acceptance_date2
+  , case when a.evaluation_date > b.earliest_acceptance then b.earliest_acceptance else a.evaluation_date end as evaluation_date
+  , case when a.evaluation_date > b.earliest_acceptance then 'Another acceptance came in' else a.evaluation_decision end as evaluation_decision
+  , case when a.interview_date > b.earliest_acceptance then b.earliest_acceptance else a.interview_date end as interview_date
+  , case when a.interview_date > b.earliest_acceptance then 'Another acceptance came in' else a.interview_date end as interview_decision
+  , case when a.offer_date > b.earliest_acceptance then b.earliest_acceptance else a.offer_date end as offer_date
+  , case when a.offer_date > b.earliest_acceptance then 'Another acceptance came in' else a.offer_decision end as offer_decision
+  , case when a.acceptance_date > b.earliest_acceptance then b.earliest_acceptance else a.acceptance_date end as acceptance_date
+  , case when a.acceptance_date > b.earliest_acceptance then 'Another acceptance came in' else a.acceptance_decision end as acceptance_decision
 FROM drop_out_cte a
 LEFT JOIN earliest_acceptance_cte b
   ON a.job_position_id = b.job_position_id
+WHERE coalesce(a.application_date,'1900-01-01') <= b.earliest_acceptance
 ORDER BY 1
 ;
 ```
