@@ -10,18 +10,13 @@ explore: daily_snapshot {}
 
 ############ Caching Logic ############
 
-persist_with: once_second
+persist_with: new_data
 
 ### PDT Timeframes
 
 datagroup: new_data {
-  max_cache_age: "30 minutes"
+  max_cache_age: "24 hours"
   sql_trigger: SELECT max(measurement_timestamp) FROM `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications` ;;
-}
-
-datagroup: once_second {
-  max_cache_age: "1 second"
-  sql_trigger: SELECT current_datetime() ;;
 }
 
 datagroup: once_daily {

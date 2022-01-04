@@ -215,15 +215,15 @@ SELECT
   , case
       when measurement_date < application_date then null
       when application_id is null then null
-      when measurement_date >= application_date and measurement_date < coalesce(evaluation_date, '2099-12-31') then '1 - Applied | Waiting on Eval'
-      when measurement_date >= evaluation_date and measurement_date < coalesce(interview_date, '2099-12-31') and evaluation_decision = 'Pass' then '2a - Passed Evaluation | Waiting on Interview'
-      when measurement_date >= evaluation_date and measurement_date < coalesce(interview_date, '2099-12-31') and evaluation_decision <> 'Pass' then '2b - Failed Evaluation'
-      when measurement_date >= interview_date and measurement_date < coalesce(offer_date, '2099-12-31') and interview_decision = 'Pass' then '3a - Scheduled Interview | Waiting on Results'
-      when measurement_date >= interview_date and measurement_date < coalesce(offer_date, '2099-12-31') and interview_decision <> 'Pass' then '3b - Did Not Schedule Interview'
-      when measurement_date >= offer_date and measurement_date < coalesce(acceptance_date, '2099-12-31') and offer_decision = 'Pass' then '4a - Passed Interview | Waiting to Accept'
-      when measurement_date >= offer_date and measurement_date < coalesce(acceptance_date, '2099-12-31') and offer_decision <> 'Pass' then '4b - Failed Interview'
-      when measurement_date >= acceptance_date and acceptance_decision = 'Pass' then '5a - Accepted Offer'
-      when measurement_date >= acceptance_date and acceptance_decision <> 'Pass' then '5b - Declined Offer'
+      when measurement_date >= application_date and measurement_date < coalesce(evaluation_date, '2099-12-31') then '1 Applied | Waiting'
+      when measurement_date >= evaluation_date and measurement_date < coalesce(interview_date, '2099-12-31') and evaluation_decision = 'Pass' then '2 Passed Eval | Waiting'
+      when measurement_date >= evaluation_date and measurement_date < coalesce(interview_date, '2099-12-31') and evaluation_decision <> 'Pass' then '2a Failed Evaluation'
+      when measurement_date >= interview_date and measurement_date < coalesce(offer_date, '2099-12-31') and interview_decision = 'Pass' then '3 Scheduled Interview | Waiting'
+      when measurement_date >= interview_date and measurement_date < coalesce(offer_date, '2099-12-31') and interview_decision <> 'Pass' then '3a Did Not Schedule Interview'
+      when measurement_date >= offer_date and measurement_date < coalesce(acceptance_date, '2099-12-31') and offer_decision = 'Pass' then '4 Passed Int | Waiting'
+      when measurement_date >= offer_date and measurement_date < coalesce(acceptance_date, '2099-12-31') and offer_decision <> 'Pass' then '4a Failed Interview'
+      when measurement_date >= acceptance_date and acceptance_decision = 'Pass' then '5a Accepted Offer'
+      when measurement_date >= acceptance_date and acceptance_decision <> 'Pass' then '5b Declined Offer'
       else 'Z - Other'
     end as status
 FROM join_back_to_main_table

@@ -162,7 +162,6 @@ view: recruiting_ats {
     sql: ${TABLE}.acceptance_decision ;;
   }
 
-
 #######################
 ### Derived Dimensions
 #######################
@@ -375,6 +374,18 @@ view: recruiting_ats {
     group_label: "Z"
     type: date
     sql: date_add(current_date(), interval ${difference_eval_int}*-1 day) ;;
+  }
+
+### Derived Dimensions
+
+  parameter: cost_evaluation {
+    type: number
+    default_value: "100"
+  }
+
+  parameter: cost_interview {
+    type: number
+    default_value: "500"
   }
 
 #######################
@@ -688,5 +699,28 @@ view: recruiting_ats {
     type: average
     sql: ${difference_apply_accept} ;;
     value_format_name: decimal_1
+  }
+
+### Cost
+
+  measure: cost_evaluations {
+    group_label: "Cost"
+    type: number
+    sql: ${count_evaluations} * {% parameter cost_evaluation %} ;;
+    value_format_name: usd
+  }
+
+  measure: cost_interviews {
+    group_label: "Cost"
+    type: number
+    sql: ${count_interviews} * {% parameter cost_interview %} ;;
+    value_format_name: usd
+  }
+
+  measure: total_cost {
+    group_label: "Cost"
+    type: number
+    sql: ${cost_evaluations} + ${cost_interviews} ;;
+    value_format_name: usd
   }
 }

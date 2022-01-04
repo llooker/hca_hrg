@@ -43,6 +43,7 @@ view: daily_snapshot {
   }
 
   dimension: status {
+    suggest_persist_for: "1 hour"
     type: string
     sql: ${TABLE}.status ;;
   }
