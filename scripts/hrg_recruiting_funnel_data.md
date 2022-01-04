@@ -62,7 +62,7 @@ FROM job_position_cte
 SELECT
     *
   , case when number_applicants = 0 then null else sum(number_applicants) OVER (ORDER BY job_position_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) end as end_row
-  , DATE_ADD(current_date(), INTERVAL -260 day) as earliest_date
+  , DATE_ADD(current_date(), INTERVAL -320 day) as earliest_date
   , cast(round(rand() * 180,0) as int64) as days_to_post
 FROM number_applicants_cte
 )
@@ -95,11 +95,11 @@ SELECT
   , b.application_id
   , b.application_id as applicant_id
   , a.post_date
-  , cast(round(rand() * 20,0) as int64) as days_to_apply
-  , cast(round(rand() * 25,0) as int64) as days_to_evaluate
-  , cast(round(rand() * 15,0) as int64) as days_to_interview
-  , cast(round(rand() * 8,0) as int64) as days_to_offer
-  , cast(round(rand() * 10,0) as int64) as days_to_accept
+  , cast(round(rand() * 68,0) as int64) + 1 as days_to_apply
+  , cast(round(rand() * 89,0) as int64) + 1 as days_to_evaluate
+  , cast(round(rand() * 49,0) as int64) + 1 as days_to_interview
+  , cast(round(rand() * 24,0) as int64) + 1 as days_to_offer
+  , cast(round(rand() * 29,0) as int64) + 1 as days_to_accept
 FROM `hca-data-sandbox.hrg_recruiting.synthetic_2_create_job_openings` a
 LEFT JOIN applicant_cte b
   ON b.application_id BETWEEN a.start_row and a.end_row
@@ -135,11 +135,12 @@ SELECT
   , evaluation_date
   , case when success_evaluate < 0.6 then 'Pass' else 'Failure' end as evaluation_decision
   # Note: there's no decision for interview b/c the 5% fallout here is a scheduling / process problem
-  , case when success_evaluate < 0.6 and success_interview < 0.95 then interview_date else NULL end as interview_date
-  , case when success_evaluate < 0.6 and success_interview < 0.95 then offer_date else NULL end as offer_date
-  , case when success_evaluate < 0.6 and success_interview < 0.95 and success_offer < 0.7 then 'Pass' else 'Failure' end as offer_decision
-  , case when success_evaluate < 0.6 and success_interview < 0.95 and success_offer < 0.7 then acceptance_date else NULL end as acceptance_date
-  , case when success_evaluate < 0.6 and success_interview < 0.95 and success_offer < 0.7 and success_accept < 0.8 then 'Pass' else 'Failure' end as acceptance_decision
+  , case when success_evaluate < 0.6 and success_interview < 0.85 then interview_date else NULL end as interview_date
+  , case when success_evaluate < 0.6 and success_interview < 0.85 then 'Pass' else 'Failure' end as interview_decision
+  , case when success_evaluate < 0.6 and success_interview < 0.85 then offer_date else NULL end as offer_date
+  , case when success_evaluate < 0.6 and success_interview < 0.85 and success_offer < 0.7 then 'Pass' else 'Failure' end as offer_decision
+  , case when success_evaluate < 0.6 and success_interview < 0.85 and success_offer < 0.7 then acceptance_date else NULL end as acceptance_date
+  , case when success_evaluate < 0.6 and success_interview < 0.85 and success_offer < 0.7 and success_accept < 0.8 then 'Pass' else 'Failure' end as acceptance_decision
 FROM `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications_pre`
 )
 , earliest_acceptance_cte as (
@@ -167,13 +168,13 @@ SELECT
 --   , a.interview_date as interview_date2
 --   , a.offer_date as offer_date2
 --   , a.acceptance_date as acceptance_date2
-  , case when a.evaluation_date > b.earliest_acceptance then b.earliest_acceptance else a.evaluation_date end as evaluation_date
+  , case when a.evaluation_date > b.earliest_acceptance then NULL else a.evaluation_date end as evaluation_date
   , case when a.evaluation_date > b.earliest_acceptance then 'Another acceptance came in' else a.evaluation_decision end as evaluation_decision
-  , case when a.interview_date > b.earliest_acceptance then b.earliest_acceptance else a.interview_date end as interview_date
-  , case when a.interview_date > b.earliest_acceptance then 'Another acceptance came in' else a.interview_date end as interview_decision
-  , case when a.offer_date > b.earliest_acceptance then b.earliest_acceptance else a.offer_date end as offer_date
+  , case when a.interview_date > b.earliest_acceptance then NULL else a.interview_date end as interview_date
+  , case when a.interview_date > b.earliest_acceptance then 'Another acceptance came in' else a.interview_decision end as interview_decision
+  , case when a.offer_date > b.earliest_acceptance then NULL else a.offer_date end as offer_date
   , case when a.offer_date > b.earliest_acceptance then 'Another acceptance came in' else a.offer_decision end as offer_decision
-  , case when a.acceptance_date > b.earliest_acceptance then b.earliest_acceptance else a.acceptance_date end as acceptance_date
+  , case when a.acceptance_date > b.earliest_acceptance then NULL else a.acceptance_date end as acceptance_date
   , case when a.acceptance_date > b.earliest_acceptance then 'Another acceptance came in' else a.acceptance_decision end as acceptance_decision
 FROM drop_out_cte a
 LEFT JOIN earliest_acceptance_cte b
@@ -181,4 +182,71 @@ LEFT JOIN earliest_acceptance_cte b
 WHERE coalesce(a.application_date,'1900-01-01') <= b.earliest_acceptance
 ORDER BY 1
 ;
+
+-- Create a snapshot - by day by applicant what is status of application
+
+CREATE OR REPLACE TABLE `hca-data-sandbox.hrg_recruiting.synthetic_4_daily_snapshot` AS
+with every_day_2_years as (
+SELECT measurement_date
+FROM (
+  SELECT
+      DATE_ADD((SELECT min(post_date) FROM `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications`), INTERVAL -1 day) as min_date
+    , current_date() as max_date
+) a
+JOIN UNNEST(GENERATE_DATE_ARRAY(a.min_date, a.max_date)) measurement_date
+)
+, cross_join_applications as (
+SELECT a.application_id, b.measurement_date
+FROM (SELECT distinct application_id FROM `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications`) a
+, every_day_2_years b
+)
+, join_back_to_main_table as (
+SELECT a.*, b.* except (application_id)
+FROM cross_join_applications a
+LEFT JOIN `hca-data-sandbox.hrg_recruiting.synthetic_3_create_job_applications` b
+  ON a.application_id = b.application_id
+)
+, status_cte as (
+SELECT
+    application_id
+  , measurement_date
+  , case when measurement_date >= application_date then job_position_id else null end as job_position_id
+  , case when measurement_date >= application_date then applicant_id else null end as applicant_id
+  , case
+      when measurement_date < application_date then null
+      when application_id is null then null
+      when measurement_date >= application_date and measurement_date < coalesce(evaluation_date, '2099-12-31') then '1 - Applied | Waiting on Eval'
+      when measurement_date >= evaluation_date and measurement_date < coalesce(interview_date, '2099-12-31') and evaluation_decision = 'Pass' then '2a - Passed Evaluation | Waiting on Interview'
+      when measurement_date >= evaluation_date and measurement_date < coalesce(interview_date, '2099-12-31') and evaluation_decision <> 'Pass' then '2b - Failed Evaluation'
+      when measurement_date >= interview_date and measurement_date < coalesce(offer_date, '2099-12-31') and interview_decision = 'Pass' then '3a - Scheduled Interview | Waiting on Results'
+      when measurement_date >= interview_date and measurement_date < coalesce(offer_date, '2099-12-31') and interview_decision <> 'Pass' then '3b - Did Not Schedule Interview'
+      when measurement_date >= offer_date and measurement_date < coalesce(acceptance_date, '2099-12-31') and offer_decision = 'Pass' then '4a - Passed Interview | Waiting to Accept'
+      when measurement_date >= offer_date and measurement_date < coalesce(acceptance_date, '2099-12-31') and offer_decision <> 'Pass' then '4b - Failed Interview'
+      when measurement_date >= acceptance_date and acceptance_decision = 'Pass' then '5a - Accepted Offer'
+      when measurement_date >= acceptance_date and acceptance_decision <> 'Pass' then '5b - Declined Offer'
+      else 'Z - Other'
+    end as status
+FROM join_back_to_main_table
+)
+, is_changed_status_cte as (
+SELECT
+    *
+  , case when lag(coalesce(status,'x'),1) OVER (PARTITION BY application_id ORDER BY measurement_date) <> coalesce(status,'x') then measurement_date else NULL end AS change_date
+FROM status_cte
+)
+, refer_status_date as (
+SELECT
+    *
+  , FIRST_VALUE(change_date) OVER (PARTITION BY application_id, status ORDER BY measurement_date ROWS BETWEEN UNBOUNDED PRECEDING AND 0 FOLLOWING) AS change_date_cont
+FROM is_changed_status_cte
+)
+, days_since_status_change_cte as (
+SELECT
+    *
+  , date_diff(measurement_date, change_date_cont, day) as days_since_status_change
+FROM refer_status_date
+)
+SELECT * except(change_date, change_date_cont)
+FROM days_since_status_change_cte
+ORDER BY 2
 ```
